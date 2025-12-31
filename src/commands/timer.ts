@@ -328,9 +328,162 @@ export const timerCommands = {
   },
 
   async edit(entryId: string, options: any): Promise<void> {
-    console.log(chalk.yellow(`✏️  Edit functionality coming soon!`));
-    console.log(chalk.gray('Entry ID:'), entryId);
-    console.log(chalk.gray('💡 This feature will allow editing existing time entries'));
+    try {
+      console.log(chalk.blue('✏️  Editing time entry...'));
+
+      // Check authentication
+      const hasKey = await configManager.hasApiKey();
+      if (!hasKey) {
+        console.log(chalk.red('❌ Not authenticated. Run: clockify auth login'));
+        process.exit(1);
+      }
+
+      // Get workspace and user
+      const workspaceId = configManager.get('workspaceId');
+      if (!workspaceId) {
+        console.log(chalk.red('❌ No workspace configured. Run: clockify auth status'));
+        process.exit(1);
+      }
+
+      const user = await clockifyAPI.getCurrentUser();
+
+      // Get time entries to find the target entry
+      const entries = await clockifyAPI.getTimeEntries(workspaceId, user.id);
+
+      let targetEntry: typeof entries[0] | undefined;
+
+      if (entryId.toLowerCase() === 'last') {
+        // Find the most recent completed entry
+        const completedEntries = entries.filter(entry => entry.timeInterval.end);
+        if (completedEntries.length === 0) {
+          console.log(chalk.yellow('⚠️  No completed time entries found'));
+          return;
+        }
+        targetEntry = completedEntries[0]; // Already sorted by most recent
+      } else {
+        // Find by ID
+        targetEntry = entries.find(entry => entry.id === entryId);
+      }
+
+      if (!targetEntry) {
+        console.log(chalk.red(`❌ Time entry not found: ${entryId}`));
+        console.log(chalk.gray('💡 Use "last" to edit the most recent entry'));
+        return;
+      }
+
+      console.log(chalk.gray(`📝 Editing entry: "${targetEntry.description || 'No description'}"`));
+
+      // Build update request starting with current values
+      const updateData: Record<string, any> = {
+        start: targetEntry.timeInterval.start,
+        description: targetEntry.description || '',
+        billable: targetEntry.billable,
+        tagIds: targetEntry.tagIds || []
+      };
+
+      // Only include optional fields if they exist
+      if (targetEntry.timeInterval.end) {
+        updateData.end = targetEntry.timeInterval.end;
+      }
+      if (targetEntry.projectId) {
+        updateData.projectId = targetEntry.projectId;
+      }
+      if (targetEntry.taskId) {
+        updateData.taskId = targetEntry.taskId;
+      }
+
+      // Track what was changed
+      const changes: string[] = [];
+
+      // Apply updates from options
+      if (options.description !== undefined) {
+        updateData.description = sanitizeInput(options.description);
+        changes.push('description');
+      }
+
+      if (options.billable !== undefined) {
+        updateData.billable = options.billable;
+        changes.push(options.billable ? 'marked billable' : 'marked non-billable');
+      }
+
+      if (options.project) {
+        const projects = await clockifyAPI.getProjects(workspaceId);
+        const project = projects.find(p =>
+          p.name.toLowerCase().includes(options.project.toLowerCase()) ||
+          p.id === options.project
+        );
+
+        if (project) {
+          updateData.projectId = project.id;
+          changes.push(`project → ${project.name}`);
+        } else {
+          console.log(chalk.yellow(`⚠️  Project "${options.project}" not found. Keeping current project.`));
+        }
+      }
+
+      if (options.startTime) {
+        const now = new Date();
+        const timeMatch = options.startTime.match(/^(\d{1,2}):(\d{2})$/);
+        if (timeMatch) {
+          const startTime = new Date(targetEntry.timeInterval.start);
+          startTime.setHours(parseInt(timeMatch[1]), parseInt(timeMatch[2]), 0, 0);
+          updateData.start = startTime.toISOString();
+          changes.push('start time');
+        } else {
+          updateData.start = new Date(options.startTime).toISOString();
+          changes.push('start time');
+        }
+      }
+
+      if (options.endTime) {
+        const timeMatch = options.endTime.match(/^(\d{1,2}):(\d{2})$/);
+        if (timeMatch) {
+          const endTime = new Date(targetEntry.timeInterval.end || new Date());
+          endTime.setHours(parseInt(timeMatch[1]), parseInt(timeMatch[2]), 0, 0);
+          updateData.end = endTime.toISOString();
+          changes.push('end time');
+        } else {
+          updateData.end = new Date(options.endTime).toISOString();
+          changes.push('end time');
+        }
+      }
+
+      if (changes.length === 0) {
+        console.log(chalk.yellow('⚠️  No changes specified'));
+        console.log(chalk.gray('💡 Use options like --description, --billable, --project, --start-time, --end-time'));
+        return;
+      }
+
+      // Update the entry
+      const updatedEntry = await clockifyAPI.updateTimeEntry(workspaceId, targetEntry.id, updateData);
+
+      // Calculate duration
+      const startTime = new Date(updatedEntry.timeInterval.start);
+      const endTime = updatedEntry.timeInterval.end ? new Date(updatedEntry.timeInterval.end) : null;
+      const durationMinutes = endTime
+        ? Math.round((endTime.getTime() - startTime.getTime()) / 60000)
+        : null;
+
+      console.log(chalk.green('✅ Time entry updated successfully!'));
+      console.log(chalk.gray('━'.repeat(50)));
+      console.log(chalk.bold('Changes:'), chalk.cyan(changes.join(', ')));
+      console.log(chalk.gray('━'.repeat(50)));
+      if (updatedEntry.project?.name) {
+        console.log(chalk.bold('Project:'), chalk.white(updatedEntry.project.name));
+      }
+      console.log(chalk.bold('Description:'), chalk.white(updatedEntry.description || 'No description'));
+      console.log(chalk.bold('Start:'), chalk.white(startTime.toLocaleString()));
+      if (endTime) {
+        console.log(chalk.bold('End:'), chalk.white(endTime.toLocaleString()));
+        console.log(chalk.bold('Duration:'), chalk.white(formatDuration(durationMinutes!)));
+      }
+      console.log(chalk.bold('Billable:'), updatedEntry.billable ? chalk.green('Yes') : chalk.gray('No'));
+      console.log(chalk.gray('━'.repeat(50)));
+
+    } catch (error) {
+      console.log(chalk.red(`❌ Failed to edit time entry: ${error instanceof Error ? error.message : 'Unknown error'}`));
+      process.exit(1);
+    }
   },
 
   async delete(entryId: string, options: any): Promise<void> {
