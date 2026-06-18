@@ -10,7 +10,7 @@ A powerful, secure, and user-friendly command-line interface for time tracking w
 ## 🚀 Features
 
 - **⚡ Fast & Lightweight**: Start tracking in milliseconds
-- **🔒 Secure**: API keys stored in OS keychain/credential manager
+- **🔒 Secure**: API key stored in your OS keychain (macOS Keychain · Windows Credential Manager · Linux Secret Service), with a `CLOCKIFY_API_KEY` env override and a `0600`-file fallback when no keychain is available
 - **📊 Rich Reports**: Daily, weekly, monthly summaries with export options
 - **🎯 Project Management**: Create and manage projects, tasks, and clients
 - **🌐 Cross-Platform**: Works on macOS, Linux, and Windows
@@ -150,7 +150,7 @@ clockify workspace switch "Other Workspace"
 
 This project takes security seriously:
 
-- **🔐 Secure Credential Storage**: API keys stored in OS keychain/credential manager
+- **🔐 Secure Credential Storage**: API key stored in your OS keychain via `@napi-rs/keyring` (macOS Keychain · Windows Credential Manager · Linux Secret Service); `CLOCKIFY_API_KEY` env override and a `0600`-file fallback are also supported
 - **🛡️ Input Validation**: All inputs sanitized and validated
 - **📡 HTTPS Only**: All API communications over encrypted connections
 - **🔍 Dependency Scanning**: Regular security audits with Snyk and npm audit

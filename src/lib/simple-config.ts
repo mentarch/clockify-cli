@@ -1,11 +1,18 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import * as os from 'os';
+import { Entry } from '@napi-rs/keyring';
 import { ClockifyConfig } from '../types/clockify';
 
 const CONFIG_DIR = path.join(os.homedir(), '.clockify-cli');
 const CONFIG_FILE = path.join(CONFIG_DIR, 'config.json');
+// Fallback only — used when the OS keychain is unavailable (headless/CI, or
+// Linux without a Secret Service). Written 0600. The keychain is preferred.
 const API_KEY_FILE = path.join(CONFIG_DIR, 'api-key');
+
+// OS keychain coordinates (macOS Keychain, Windows Credential Manager, libsecret).
+const KEYRING_SERVICE = 'clockify-cli';
+const KEYRING_ACCOUNT = 'api-key';
 
 class SimpleConfigManager {
   private config: ClockifyConfig;
@@ -48,50 +55,72 @@ class SimpleConfigManager {
   }
 
   /**
-   * Store API key securely in file with restricted permissions
+   * Store the API key in the OS keychain. Falls back to a 0600 file only if the
+   * keychain is unavailable (headless/CI, or Linux without a Secret Service).
    */
   async setApiKey(apiKey: string): Promise<void> {
     try {
-      fs.writeFileSync(API_KEY_FILE, apiKey, { mode: 0o600 });
-    } catch (error) {
-      throw new Error(`Failed to store API key: ${error instanceof Error ? error.message : 'Unknown error'}`);
+      new Entry(KEYRING_SERVICE, KEYRING_ACCOUNT).setPassword(apiKey);
+      // Keychain succeeded — don't leave a stale plaintext fallback behind.
+      if (fs.existsSync(API_KEY_FILE)) {
+        try { fs.unlinkSync(API_KEY_FILE); } catch { /* ignore */ }
+      }
+    } catch {
+      try {
+        fs.writeFileSync(API_KEY_FILE, apiKey, { mode: 0o600 });
+      } catch (error) {
+        throw new Error(`Failed to store API key: ${error instanceof Error ? error.message : 'Unknown error'}`);
+      }
     }
   }
 
   /**
-   * Retrieve API key from file or environment variable
+   * Retrieve the API key. Precedence: CLOCKIFY_API_KEY env var → OS keychain →
+   * 0600 file fallback.
    */
   async getApiKey(): Promise<string | null> {
+    if (process.env.CLOCKIFY_API_KEY) {
+      return process.env.CLOCKIFY_API_KEY;
+    }
     try {
-      // First try environment variable
-      if (process.env.CLOCKIFY_API_KEY) {
-        return process.env.CLOCKIFY_API_KEY;
+      const fromKeychain = new Entry(KEYRING_SERVICE, KEYRING_ACCOUNT).getPassword();
+      if (fromKeychain) {
+        return fromKeychain;
       }
-
-      // Then try file
+    } catch {
+      // Keychain unavailable — fall through to the file.
+    }
+    try {
       if (fs.existsSync(API_KEY_FILE)) {
         return fs.readFileSync(API_KEY_FILE, 'utf8').trim();
       }
-
-      return null;
-    } catch (error) {
-      return null;
+    } catch {
+      /* ignore */
     }
+    return null;
   }
 
   /**
-   * Remove API key file
+   * Remove the API key from both the OS keychain and the file fallback.
    */
   async removeApiKey(): Promise<boolean> {
+    let removed = false;
+    try {
+      if (new Entry(KEYRING_SERVICE, KEYRING_ACCOUNT).deletePassword()) {
+        removed = true;
+      }
+    } catch {
+      /* ignore */
+    }
     try {
       if (fs.existsSync(API_KEY_FILE)) {
         fs.unlinkSync(API_KEY_FILE);
-        return true;
+        removed = true;
       }
-      return false;
-    } catch (error) {
-      return false;
+    } catch {
+      /* ignore */
     }
+    return removed;
   }
 
   /**

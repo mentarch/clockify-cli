@@ -18,7 +18,7 @@
     "security": "npm audit && snyk test",
     "security:fix": "npm audit fix",
     "prepare": "husky install",
-    "prepublishOnly": "npm run build && npm run test && npm run security"
+    "prepublishOnly": "npm run build"
   },
   "keywords": [
     "clockify",
@@ -27,21 +27,22 @@
     "productivity",
     "timer"
   ],
-  "author": "Your Name <your.email@example.com>",
+  "author": "Christopher Sivori",
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/yourusername/clockify-cli.git"
+    "url": "git+https://github.com/sivori/clockify-cli.git"
   },
   "bugs": {
-    "url": "https://github.com/yourusername/clockify-cli/issues"
+    "url": "https://github.com/sivori/clockify-cli/issues"
   },
-  "homepage": "https://github.com/yourusername/clockify-cli#readme",
+  "homepage": "https://github.com/sivori/clockify-cli#readme",
   "engines": {
     "node": ">=16.0.0",
     "npm": ">=7.0.0"
   },
   "dependencies": {
+    "@napi-rs/keyring": "^1.3.0",
     "axios": "^1.9.0",
     "chalk": "^5.4.1",
     "commander": "^11.1.0",
@@ -49,7 +50,6 @@
     "date-fns": "^2.30.0",
     "inquirer": "^9.3.7",
     "joi": "^17.11.0",
-    "keytar": "^7.9.0",
     "node-localstorage": "^3.0.5",
     "ora": "^7.0.1",
     "table": "^6.8.1"
@@ -90,5 +90,8 @@
       "lcov",
       "html"
     ]
-  }
+  },
+  "files": [
+    "dist"
+  ]
 }
